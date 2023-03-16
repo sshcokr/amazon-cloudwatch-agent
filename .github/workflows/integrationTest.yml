@@ -8,9 +8,9 @@ env:
   S3_INTEGRATION_BUCKET: ${{ secrets.S3_INTEGRATION_BUCKET }}
   KEY_NAME: ${{ secrets.KEY_NAME }}
   ECR_INTEGRATION_TEST_REPO: "cwagent-integration-test"
-  CWA_GITHUB_TEST_REPO_NAME: "aws/amazon-cloudwatch-agent-test"
-  CWA_GITHUB_TEST_REPO_URL: "https://github.com/aws/amazon-cloudwatch-agent-test.git"
-  CWA_GITHUB_TEST_REPO_BRANCH: "main"
+  CWA_GITHUB_TEST_REPO_NAME: "straussb/amazon-cloudwatch-agent-test"
+  CWA_GITHUB_TEST_REPO_URL: "https://github.com/straussb/amazon-cloudwatch-agent-test.git"
+  CWA_GITHUB_TEST_REPO_BRANCH: "test-fixes"
 
 on:
   push:
@@ -179,6 +179,7 @@ jobs:
       - uses: actions/checkout@v2
         with:
           repository: ${{env.CWA_GITHUB_TEST_REPO_NAME}}
+          ref: ${{env.CWA_GITHUB_TEST_REPO_BRANCH}}
 
       - name: Set up Go 1.x
         uses: actions/setup-go@v2
@@ -241,6 +242,7 @@ jobs:
         with:
           repository: ${{env.CWA_GITHUB_TEST_REPO_NAME}}
           path: test
+          ref: ${{env.CWA_GITHUB_TEST_REPO_BRANCH}}
 
       - name: Set up Go 1.x
         uses: actions/setup-go@v2
@@ -412,6 +414,7 @@ jobs:
           terraform apply --auto-approve
           -var="ssh_key_value=${PRIVATE_KEY}"
           -var="github_test_repo=${{env.CWA_GITHUB_TEST_REPO_URL}}"
+          -var="github_test_repo_branch=${{env.CWA_GITHUB_TEST_REPO_BRANCH}}"
           -var="cwa_github_sha=${GITHUB_SHA}"
           -var="s3_bucket=${S3_INTEGRATION_BUCKET}"
           -var="ssh_key_name=${KEY_NAME}" &&
@@ -467,7 +470,8 @@ jobs:
             cd terraform/ec2/linux
             terraform init
             if terraform apply --auto-approve \
-              -var="ssh_key_value=${PRIVATE_KEY}" -var="github_test_repo=${{env.CWA_GITHUB_TEST_REPO_URL}}" \
+              -var="ssh_key_value=${PRIVATE_KEY}"
+              -var="github_test_repo=${{env.CWA_GITHUB_TEST_REPO_URL}}" -var="github_test_repo_branch=${{env.CWA_GITHUB_TEST_REPO_BRANCH}}" \
               -var="cwa_github_sha=${GITHUB_SHA}" -var="install_agent=${{ matrix.arrays.installAgentCommand }}" \
               -var="github_test_repo_branch=${{env.CWA_GITHUB_TEST_REPO_BRANCH}}" \
               -var="ec2_instance_type=${{ matrix.arrays.instanceType }}" \
@@ -497,6 +501,7 @@ jobs:
             if terraform apply --auto-approve \
               -var="ssh_key_value=${PRIVATE_KEY}" -var="ssh_key_name=${KEY_NAME}" \
               -var="github_repo=${{env.CWA_GITHUB_TEST_REPO_URL}}" \
+              -var="github_test_repo_branch=${{env.CWA_GITHUB_TEST_REPO_BRANCH}}" \
               -var="cwa_github_sha=${GITHUB_SHA}" -var="ami=${{ matrix.arrays.ami }}" \
               -var="test_dir=${{ matrix.arrays.test_dir }}" \
               -var="ec2_instance_type=${{ matrix.arrays.instanceType }}" \
@@ -567,7 +572,8 @@ jobs:
             cd terraform/ec2/linux
             terraform init
             if terraform apply --auto-approve \
-              -var="ssh_key_value=${PRIVATE_KEY}" -var="github_test_repo=${{env.CWA_GITHUB_TEST_REPO_URL}}" \
+              -var="ssh_key_value=${PRIVATE_KEY}"
+              -var="github_test_repo=${{env.CWA_GITHUB_TEST_REPO_URL}}" -var="github_test_repo_branch=${{env.CWA_GITHUB_TEST_REPO_BRANCH}}" \
               -var="cwa_github_sha=${GITHUB_SHA}" -var="install_agent=${{ matrix.arrays.installAgentCommand }}" \
               -var="github_test_repo_branch=${{env.CWA_GITHUB_TEST_REPO_BRANCH}}" \
               -var="ec2_instance_type=${{ matrix.arrays.instanceType }}" \
