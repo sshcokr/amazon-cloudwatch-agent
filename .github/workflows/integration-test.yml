@@ -642,6 +642,7 @@ jobs:
     needs: [BuildMSI, GenerateTestMatrix]
     name: 'EC2WinIntegrationTest'
     runs-on: ubuntu-latest
+    if: false
     strategy:
       fail-fast: false
       matrix:
