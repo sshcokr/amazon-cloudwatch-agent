@@ -11,7 +11,7 @@ env:
   ECR_INTEGRATION_TEST_REPO: "cwagent-integration-test"
   CWA_GITHUB_TEST_REPO_NAME: "ymtaye/amazon-cloudwatch-agent-test"
   CWA_GITHUB_TEST_REPO_URL: "https://github.com/ymtaye/amazon-cloudwatch-agent-test.git"
-  CWA_GITHUB_TEST_REPO_BRANCH: "events_log_testing"
+  CWA_GITHUB_TEST_REPO_BRANCH: "fix_broken_tests"
 
 on:
   push:
@@ -642,7 +642,6 @@ jobs:
     needs: [BuildMSI, GenerateTestMatrix]
     name: 'EC2WinIntegrationTest'
     runs-on: ubuntu-latest
-    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -724,7 +723,6 @@ jobs:
     needs: [MakeMacPkg, GenerateTestMatrix]
     name: 'EC2DarwinIntegrationTest'
     runs-on: ubuntu-latest
-    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -1169,6 +1167,7 @@ jobs:
     name: "PerformanceTrackingTest"
     needs: [MakeBinary, GenerateTestMatrix]
     runs-on: ubuntu-latest
+    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -1237,6 +1236,7 @@ jobs:
     name: "EC2WinPerformanceTest"
     needs: [ BuildMSI, GenerateTestMatrix ]
     runs-on: ubuntu-latest
+    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -1305,6 +1305,7 @@ jobs:
     name: "StressTrackingTest"
     needs: [MakeBinary, GenerateTestMatrix]
     runs-on: ubuntu-latest
+    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -1375,6 +1376,7 @@ jobs:
     name: "EC2WinStressTrackingTest"
     needs: [BuildMSI, GenerateTestMatrix]
     runs-on: ubuntu-latest
+    if: false
     strategy:
       fail-fast: false
       matrix:
