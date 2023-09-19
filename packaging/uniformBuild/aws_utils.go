@@ -1,0 +1,358 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/ssm"
+	ssmtypes "github.com/aws/aws-sdk-go-v2/service/ssm/types"
+	"github.com/aws/smithy-go"
+	"github.com/schollz/progressbar/v3"
+	"sort"
+	"strconv"
+	"sync"
+	"time"
+)
+
+const ACCOUNT_ID = "956457624121"
+
+type OS string
+
+const (
+	LINUX OS = "linux"
+)
+
+type InstanceManager struct {
+	ec2Client *ec2.Client
+	instances map[string]*types.Instance
+	amis      map[OS]*types.Image
+}
+
+func CreateNewInstanceManager(cfg aws.Config) *InstanceManager {
+	return &InstanceManager{
+		ec2Client: ec2.NewFromConfig(cfg),
+		instances: make(map[string]*types.Instance),
+		amis:      make(map[OS]*types.Image),
+	}
+}
+func (imng *InstanceManager) GetLatestAMIVersions() *types.Image {
+	filters := []types.Filter{
+		{
+			Name:   aws.String("owner-id"),
+			Values: []string{ACCOUNT_ID},
+		},
+	}
+	// Get the latest AMI made by your own user
+	resp, err := imng.ec2Client.DescribeImages(context.TODO(), &ec2.DescribeImagesInput{
+		Filters: filters,
+	})
+	if err != nil {
+		panic(err)
+	}
+	// Sort the images based on the CreationDate field in descending order
+	sort.Slice(resp.Images, func(i, j int) bool {
+		return parseTime(*resp.Images[i].CreationDate).After(*parseTime(*resp.Images[j].CreationDate))
+	})
+	//// Print the latest AMI ID
+	//for _, i := range resp.Images {
+	//	fmt.Printf("%s,%s\n", *i.ImageId, *i.CreationDate)
+	//}
+	if len(resp.Images) > 0 {
+		fmt.Println("Latest AMI ID:", *resp.Images[0].ImageId)
+		return &resp.Images[0]
+	} else {
+		fmt.Println("No AMIs found.")
+		return nil
+	}
+}
+func parseTime(value string) *time.Time {
+	t, err := time.Parse("2006-01-02T15:04:05.999999999Z", value)
+	if err != nil {
+		panic(err)
+	}
+	return &t
+}
+
+//	func (imng * InstanceManager) GetSupportedAMIs(){
+//		//this populates the amis map
+//		for os :=range SUPPORTED_OSes{
+//
+//		}
+//	}
+func (imng *InstanceManager) CreateEC2InstancesBlocking(instanceGuide map[string]OS) error {
+	//check if all OSes are valid
+	for _, osType := range instanceGuide {
+		if _, ok := imng.amis[osType]; !ok {
+			return errors.New("That OS is not in supported AMIs")
+		}
+	}
+	//create instances
+	for instanceName, osType := range instanceGuide {
+		image := imng.amis[osType]
+		instance := CreateInstanceCmd(imng.ec2Client, image, instanceName)
+		imng.instances[instanceName] = &instance
+	}
+	time.Sleep(1 * time.Minute) // on average an ec2 launches in 60-90 seconds
+	var wg sync.WaitGroup
+	for _, instance := range imng.instances {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			WaitUntilAgentIsOn(imng.ec2Client, instance)
+		}()
+	}
+	wg.Wait()
+	return nil
+}
+func (imng *InstanceManager) Close() error {
+	for instanceName, instance := range imng.instances {
+		fmt.Printf("Closed instance: %s - %s \n", instanceName, *instance.InstanceId)
+		err := StopInstanceCmd(imng.ec2Client, *instance.InstanceId)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// EC2CreateInstanceAPI defines the interface for the RunInstances and CreateTags functions.
+// We use this interface to test the functions using a mocked service.
+type EC2CreateInstanceAPI interface {
+	RunInstances(ctx context.Context,
+		params *ec2.RunInstancesInput,
+		optFns ...func(*ec2.Options)) (*ec2.RunInstancesOutput, error)
+
+	CreateTags(ctx context.Context,
+		params *ec2.CreateTagsInput,
+		optFns ...func(*ec2.Options)) (*ec2.CreateTagsOutput, error)
+}
+
+// EC2StopInstancesAPI defines the interface for the StopInstances function.
+// We use this interface to test the function using a mocked service.
+type EC2StopInstancesAPI interface {
+	StopInstances(ctx context.Context,
+		params *ec2.StopInstancesInput,
+		optFns ...func(*ec2.Options)) (*ec2.StopInstancesOutput, error)
+}
+
+func MakeInstance(c context.Context, api EC2CreateInstanceAPI, input *ec2.RunInstancesInput) (*ec2.RunInstancesOutput, error) {
+	return api.RunInstances(c, input)
+}
+
+func CreateInstanceCmd(client *ec2.Client, image *types.Image, name string) types.Instance {
+	// Create separate values if required.
+	minMaxCount := int32(1)
+
+	input := &ec2.RunInstancesInput{
+		ImageId:      image.ImageId,
+		InstanceType: types.InstanceTypeT2Large,
+		MinCount:     &minMaxCount,
+		MaxCount:     &minMaxCount,
+		TagSpecifications: []types.TagSpecification{
+			{
+				ResourceType: types.ResourceTypeInstance,
+				Tags: []types.Tag{
+					{
+						Key:   aws.String("Name"),
+						Value: aws.String(name),
+					},
+					//{
+					//	Key:   aws.String("BuildEnv"),
+					//	Value: aws.String("true"),
+					//},
+				},
+			},
+		},
+		IamInstanceProfile: &types.IamInstanceProfileSpecification{
+			Arn: aws.String(BUILD_ARN),
+		},
+	}
+
+	result, err := MakeInstance(context.TODO(), client, input)
+	if err != nil {
+		fmt.Println("Got an error creating an instance:")
+		fmt.Println(err)
+		return types.Instance{}
+	}
+
+	fmt.Printf("Created tagged instance with ID %s | %s \n", *result.Instances[0].InstanceId, name)
+	return result.Instances[0]
+}
+func StopInstance(c context.Context, api EC2StopInstancesAPI, input *ec2.StopInstancesInput) (*ec2.StopInstancesOutput, error) {
+	resp, err := api.StopInstances(c, input)
+
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) && apiErr.ErrorCode() == "DryRunOperation" {
+		fmt.Println("User has permission to stop instances.")
+		input.DryRun = aws.Bool(false)
+		return api.StopInstances(c, input)
+	}
+
+	return resp, err
+}
+func StopInstanceCmd(client *ec2.Client, instanceID string) error {
+	input := &ec2.StopInstancesInput{
+		InstanceIds: []string{
+			instanceID,
+		},
+		DryRun: aws.Bool(true),
+	}
+
+	_, err := StopInstance(context.TODO(), client, input)
+	if err != nil {
+		fmt.Println("Got an error stopping the instance")
+		return err
+	}
+	fmt.Println("Stopped instance with ID " + instanceID)
+	return nil
+}
+
+func RunCmdRemotely(ssmClient *ssm.Client, instance *types.Instance, command string, comment string) error {
+	// Specify the input for sending the command
+	timeout := int32(COMMAND_TRACKING_TIMEOUT.Seconds())
+	sendCommandInput := &ssm.SendCommandInput{
+		DocumentName: aws.String("AWS-RunShellScript"),
+		InstanceIds:  []string{*instance.InstanceId},
+		Parameters: map[string][]string{
+			"commands": {
+				initEnvCmd(),
+				command},
+			"workingDirectory": {"~"},
+			"executionTimeout": {strconv.Itoa(int(timeout))},
+		},
+		OutputS3BucketName: aws.String("buildenvtesting"),
+		OutputS3KeyPrefix:  aws.String("buildenvtesting/logs/"),
+		TimeoutSeconds:     aws.Int32(timeout),
+
+		Comment: aws.String(comment),
+	}
+	// Run the script on the instance
+	fmt.Println("Command sent!")
+	output, err := ssmClient.SendCommand(context.Background(), sendCommandInput)
+	if err != nil {
+		return errors.New(fmt.Sprintf("Coudln't send command with ssm: %s", err))
+	}
+	// Wait for the command to complete
+	commandID := *output.Command.CommandId
+	fmt.Printf("Waiting for command{%s}{%s}'s response\n", commandID, comment)
+	status := CheckCommandStatus(ssmClient, commandID, "linux")
+	if status == ssmtypes.CommandStatusTimedOut {
+		fmt.Println("Command timed out!")
+		return errors.New(fmt.Sprintf("Command timed-out after %f seconds", COMMAND_TRACKING_TIMEOUT.Seconds()))
+	}
+	fmt.Println("Command finished executing")
+	// Get the command output
+	cmdOut, err := ssmClient.ListCommandInvocations(context.TODO(), &ssm.ListCommandInvocationsInput{
+		CommandId: &commandID,
+		Details:   true,
+	})
+	if err != nil {
+		fmt.Println(err)
+		return err
+	}
+
+	if cmdOut.CommandInvocations[0].Status == ssmtypes.CommandInvocationStatusFailed {
+		fmt.Println(*cmdOut.CommandInvocations[0].CommandPlugins[0].Output)
+		return errors.New("Failed to execute command")
+	}
+	return nil
+
+}
+func WaitUntilAgentIsOn(client *ec2.Client, instance *types.Instance) {
+	// Get instance status
+	input := &ec2.DescribeInstanceStatusInput{
+		InstanceIds: []string{*instance.InstanceId},
+	}
+
+	for retryCount := 0; retryCount < 10; retryCount++ {
+		fmt.Printf("Trying to connect to ec2 instance, try count : %d \n", retryCount)
+		output, err := client.DescribeInstanceStatus(context.Background(), input)
+		if err != nil {
+			panic(err)
+		}
+		if len(output.InstanceStatuses) == 0 {
+			time.Sleep(1 * time.Minute)
+			continue
+		}
+		// Print instance status
+		for _, status := range output.InstanceStatuses {
+			fmt.Printf("Instance %s is %s\n", aws.ToString(status.InstanceId), aws.ToString((*string)(&status.InstanceState.Name)))
+			return
+		}
+
+	}
+}
+func GetInstanceFromID(client *ec2.Client, instanceID string) *types.Instance {
+	// Search for instance by ID
+	input := &ec2.DescribeInstancesInput{
+		InstanceIds: []string{instanceID},
+	}
+	output, err := client.DescribeInstances(context.Background(), input)
+	if err != nil {
+		panic(err)
+	}
+	// Return instance object
+	if len(output.Reservations) == 0 || len(output.Reservations[0].Instances) == 0 {
+		return nil
+	}
+	return &output.Reservations[0].Instances[0]
+
+}
+func GetCommandsList(ssmClient *ssm.Client) {
+	// List all commands
+	resp, err := ssmClient.ListCommands(context.TODO(), &ssm.ListCommandsInput{})
+	if err != nil {
+		panic(err)
+	}
+	// Print the command IDs and statuses
+	for _, command := range resp.Commands {
+		fmt.Printf("%s: %s\n", *command.CommandId, command.Status)
+	}
+}
+func GetCommandInfo(ssmClient *ssm.Client, commandID string) ssmtypes.Command {
+	resp, err := ssmClient.ListCommands(context.TODO(), &ssm.ListCommandsInput{
+		CommandId: &commandID,
+	})
+	if err != nil {
+		panic(err)
+	}
+	return resp.Commands[0]
+}
+func CheckCommandStatus(ssmClient *ssm.Client, commandID string, instanceTitle string) ssmtypes.CommandStatus {
+	bar := progressbar.NewOptions(COMMAND_TRACKING_COUNT,
+		progressbar.OptionEnableColorCodes(true),
+		progressbar.OptionShowBytes(true),
+		progressbar.OptionSetWidth(15),
+	)
+	desc := ""
+	defer func() {
+		bar.Describe(fmt.Sprintf("[%s]: %s", instanceTitle, desc))
+		bar.Finish()
+	}()
+	for i := 0; i < COMMAND_TRACKING_COUNT; i++ {
+		bar.Add(1)
+		cmd := GetCommandInfo(ssmClient, commandID)
+		//fmt.Printf("Time: %s , Status: %s \n", time.Now().String(), cmd.Status)
+		desc = string(cmd.Status)
+		switch cmd.Status {
+
+		case ssmtypes.CommandStatusPending:
+			i--
+			time.Sleep(COMMAND_TRACKING_INTERVAL)
+			continue
+		case ssmtypes.CommandStatusFailed:
+			desc = fmt.Sprintf("\033[31m%s\033[0m", cmd.Status)
+			return cmd.Status
+		case ssmtypes.CommandStatusSuccess:
+			desc = fmt.Sprintf("\033[32m%s\033[0m", cmd.Status)
+			return cmd.Status
+		}
+		bar.Describe(fmt.Sprintf("[%s]: %s", instanceTitle, desc))
+		time.Sleep(COMMAND_TRACKING_INTERVAL)
+	}
+	return ssmtypes.CommandStatusTimedOut
+
+}
