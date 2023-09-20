@@ -6,6 +6,9 @@ env:
   CWA_GITHUB_TEST_REPO_NAME: "aws/amazon-cloudwatch-agent-test"
 
 on:
+  push:
+    branches:
+      - uniform-build-env
   workflow_dispatch:
     inputs:
       ContainerRepositoryNameAndTag:
@@ -78,16 +81,12 @@ jobs:
         with:
           key: "cached_binaries_${{ github.sha }}"
           path: go.mod
-      - name: vartest
-        env:
-            Test: "oh no"
-        run: echo "${{secrets.AWS_PRIVATE_KEY}} ${{vars.IAMNOTASECRETUNLESS}} ${{env.Test}}"
       - name:  Build Uniform Build Env
         if: contains(inputs.BucketKey, 'test') == false || steps.cached_binaries.outputs.cache-hit == false
         run: |
           cd packaging/uniformBuild
           go build .
-          ./uniformBuild -r "${{github.repositoryUrl}}" -b "main" -c "${{github.sha}}" 
+          ./uniformBuild -r "${{github.repositoryUrl}}" -b "main" -c "${{github.sha}} -a ${{secrets.AWS_TEST_ACCOUNT_ID}}" 
 
 #      - name: Cache go                                   ^^^ make it not main
 #        # Only skip for integration builds not release builds.

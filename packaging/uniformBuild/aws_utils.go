@@ -18,8 +18,6 @@ import (
 	"time"
 )
 
-const ACCOUNT_ID = "956457624121"
-
 var (
 	INVALID_INSTANCE = errors.New("Invalid Instance")
 	INVALID_OS       = errors.New("That OS is not in supported AMIs")
@@ -48,12 +46,12 @@ func CreateNewInstanceManager(cfg aws.Config) *InstanceManager {
 		amis:      make(map[OS]*types.Image),
 	}
 }
-func (imng *InstanceManager) GetAllAMIVersions() []types.Image {
+func (imng *InstanceManager) GetAllAMIVersions(accountID string) []types.Image {
 	//returns a sorted list by creation date
 	filters := []types.Filter{
 		{
 			Name:   aws.String("owner-id"),
-			Values: []string{ACCOUNT_ID},
+			Values: []string{accountID},
 		},
 		{
 			Name:   aws.String("tag-key"),
@@ -73,12 +71,8 @@ func (imng *InstanceManager) GetAllAMIVersions() []types.Image {
 	})
 	return resp.Images
 }
-func (imng *InstanceManager) GetLatestAMIVersion() *types.Image {
-	amiList := imng.GetAllAMIVersions()
-	//// Print the latest AMI ID
-	//for _, i := range resp.Images {
-	//	fmt.Printf("%s,%s\n", *i.ImageId, *i.CreationDate)
-	//}
+func (imng *InstanceManager) GetLatestAMIVersion(accountID string) *types.Image {
+	amiList := imng.GetAllAMIVersions(accountID)
 	if len(amiList) > 0 {
 		fmt.Println("Latest AMI ID:", *amiList[0].ImageId)
 		return &amiList[0]
@@ -95,9 +89,10 @@ func parseTime(value string) *time.Time {
 	return &t
 }
 
-func (imng *InstanceManager) GetSupportedAMIs() {
+func (imng *InstanceManager) GetSupportedAMIs(accountID string) {
 	//this populates the amis map
-	latestAmis := imng.GetAllAMIVersions()
+	latestAmis := imng.GetAllAMIVersions(accountID)
+	fmt.Printf("Found %d possible AMIs", len(latestAmis))
 	for _, ami := range latestAmis {
 		for _, os := range SUPPORTED_OS {
 			if strings.Contains(strings.ToLower(*ami.PlatformDetails), string(os)) {

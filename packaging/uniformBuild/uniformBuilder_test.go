@@ -3,33 +3,43 @@ package main
 import (
 	//"github.com/stretchr/testify/require"
 	"context"
+	"flag"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/stretchr/testify/require"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 )
 
+var accountID string
+
+func TestMain(m *testing.M) {
+	flag.StringVar(&accountID, "a", "", "accountID")
+	flag.StringVar(&accountID, "account_id", "", "accountID")
+	code := m.Run()
+	os.Exit(code)
+}
 func TestAmiLatest(t *testing.T) {
 	cfg, _ := config.LoadDefaultConfig(context.TODO())
 
 	imng := CreateNewInstanceManager(cfg)
 	// is it consistent
-	previous := *imng.GetLatestAMIVersion().ImageId
+	previous := *imng.GetLatestAMIVersion(accountID).ImageId
 	for i := 0; i < 5; i++ {
-		current := *imng.GetLatestAMIVersion().ImageId
+		current := *imng.GetLatestAMIVersion(accountID).ImageId
 		require.Equalf(t, current, previous, "AMI is inconsistent %s | %s", current, previous)
 	}
-	fmt.Println(imng.GetLatestAMIVersion().ImageId)
+	fmt.Println(imng.GetLatestAMIVersion(accountID).ImageId)
 
 }
 func TestSupportedAmis(t *testing.T) {
 	cfg, _ := config.LoadDefaultConfig(context.TODO())
 
 	imng := CreateNewInstanceManager(cfg)
-	imng.GetSupportedAMIs()
+	imng.GetSupportedAMIs(accountID)
 	for _, os := range SUPPORTED_OS {
 		_, ok := imng.amis[os]
 		require.Truef(t, ok, "It does not contain", os)
@@ -38,7 +48,7 @@ func TestSupportedAmis(t *testing.T) {
 }
 
 func TestEc2Generation(t *testing.T) {
-	rbm := CreateRemoteBuildManager(DEFAULT_INSTANCE_GUIDE)
+	rbm := CreateRemoteBuildManager(DEFAULT_INSTANCE_GUIDE, accountID)
 	fmt.Println(rbm.ssmClient)
 	rbm.Close()
 }
@@ -56,7 +66,7 @@ func TestEnviorment(t *testing.T) {
 	guide := map[string]OS{
 		"MainBuildEnv": LINUX,
 	}
-	rbm := CreateRemoteBuildManager(guide)
+	rbm := CreateRemoteBuildManager(guide, accountID)
 	defer rbm.Close()
 	func() {
 		require.NoError(t,
@@ -89,7 +99,7 @@ func TestOSMixUp(t *testing.T) {
 		"linux": LINUX,
 		"win":   WINDOWS,
 	}
-	rbm := CreateRemoteBuildManager(guide)
+	rbm := CreateRemoteBuildManager(guide, accountID)
 	defer rbm.Close()
 	require.NoErrorf(t, rbm.instanceManager.insertOSRequirement("linux", LINUX), "")
 	require.Errorf(t, rbm.instanceManager.insertOSRequirement("linux", WINDOWS),
@@ -99,7 +109,7 @@ func TestOSMixUp(t *testing.T) {
 func TestPublicRepoBuild(t *testing.T) {
 	REPO_NAME := "https://github.com/aws/amazon-cloudwatch-agent.git"
 	BRANCH_NAME := "main"
-	rbm := CreateRemoteBuildManager(DEFAULT_INSTANCE_GUIDE)
+	rbm := CreateRemoteBuildManager(DEFAULT_INSTANCE_GUIDE, accountID)
 	defer rbm.Close()
 	err := rbm.BuildCWAAgent(REPO_NAME, BRANCH_NAME, fmt.Sprintf("PUBLIC_REPO_TEST-%d", time.Now().Unix()), "MainBuildEnv")
 	require.NoError(t, err)
@@ -117,7 +127,7 @@ func TestMakeMsiZip(t *testing.T) {
 	guide := map[string]OS{
 		"WindowsMSIPacker": LINUX,
 	}
-	rbm := CreateRemoteBuildManager(guide)
+	rbm := CreateRemoteBuildManager(guide, accountID)
 	defer rbm.Close()
 	require.NoError(t, rbm.MakeMsiZip("WindowsMSIPacker", "PUBLIC_REPO_TEST-1695063642"))
 }

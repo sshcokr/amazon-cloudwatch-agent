@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -32,7 +33,7 @@ var DEFAULT_INSTANCE_GUIDE = map[string]OS{
 /*
 This function will create EC2 instances as a side effect
 */
-func CreateRemoteBuildManager(instanceGuide map[string]OS) *RemoteBuildManager {
+func CreateRemoteBuildManager(instanceGuide map[string]OS, accountID string) *RemoteBuildManager {
 	cfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
 		return nil
@@ -41,12 +42,18 @@ func CreateRemoteBuildManager(instanceGuide map[string]OS) *RemoteBuildManager {
 	rbm := RemoteBuildManager{}
 
 	rbm.instanceManager = CreateNewInstanceManager(cfg)
-
-	rbm.instanceManager.GetSupportedAMIs()
+	fmt.Println("New Instance Manager Created")
+	rbm.instanceManager.GetSupportedAMIs(accountID)
+	b, err := json.MarshalIndent(rbm.instanceManager.amis, "", "  ")
+	fmt.Printf("Got Supported Amis: %s  %s\n ", b, err)
 	//linuxImage := rbm.instanceManager.GetLatestAMIVersion()
 	//rbm.instanceManager.amis["linux"] = linuxImage
+	fmt.Println("About to create ec2 instances")
+	err = rbm.instanceManager.CreateEC2InstancesBlocking(instanceGuide)
 
-	rbm.instanceManager.CreateEC2InstancesBlocking(instanceGuide)
+	if err != nil {
+		panic(err)
+	}
 	fmt.Println("Starting SSM Client")
 	rbm.ssmClient = ssm.NewFromConfig(cfg)
 	//RunCmdRemotely(rbm.ssmClient, rbm.instances["linux"], "export PATH=$PATH:/usr/local/go/bin")
@@ -67,6 +74,7 @@ func (rbm *RemoteBuildManager) BuildCWAAgent(gitUrl string, branch string, commi
 	if err != nil {
 		return err
 	}
+	fmt.Println("Starting CWA Build")
 	buildMasterCommand := mergeCommands(
 		CloneGitRepo(gitUrl, branch),
 		MakeBuild(),
@@ -123,7 +131,9 @@ func main() {
 	var repo string
 	var branch string
 	var comment string
-
+	var accountID string
+	flag.StringVar(&accountID, "a", "", "accountID")
+	flag.StringVar(&accountID, "account_id", "", "accountID")
 	flag.StringVar(&repo, "r", "", "repository")
 	flag.StringVar(&repo, "repo", "", "repository")
 	flag.StringVar(&branch, "b", "", "branch")
@@ -132,8 +142,11 @@ func main() {
 	flag.StringVar(&comment, "comment", "", "comment")
 
 	flag.Parse()
-	rbm := CreateRemoteBuildManager(DEFAULT_INSTANCE_GUIDE)
+	rbm := CreateRemoteBuildManager(DEFAULT_INSTANCE_GUIDE, accountID)
 	defer rbm.Close()
-	rbm.BuildCWAAgent(repo, branch, comment, "MainBuildEnv")
+	err := rbm.BuildCWAAgent(repo, branch, comment, "MainBuildEnv")
+	if err != nil {
+		panic(err)
+	}
 
 }
