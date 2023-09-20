@@ -18,6 +18,7 @@ const COMMAND_TRACKING_TIMEOUT = 20 * time.Minute
 const COMMAND_TRACKING_INTERVAL = 1 * time.Second
 const COMMAND_TRACKING_COUNT = int(COMMAND_TRACKING_TIMEOUT / COMMAND_TRACKING_INTERVAL)
 
+// This is the main struct that is managing the build process
 type RemoteBuildManager struct {
 	ssmClient       *ssm.Client
 	instanceManager *InstanceManager
@@ -28,6 +29,9 @@ var DEFAULT_INSTANCE_GUIDE = map[string]OS{
 	"WindowsMSIPacker": LINUX,
 }
 
+/*
+This function will create EC2 instances as a side effect
+*/
 func CreateRemoteBuildManager(instanceGuide map[string]OS) *RemoteBuildManager {
 	cfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
@@ -38,8 +42,9 @@ func CreateRemoteBuildManager(instanceGuide map[string]OS) *RemoteBuildManager {
 
 	rbm.instanceManager = CreateNewInstanceManager(cfg)
 
-	linuxImage := rbm.instanceManager.GetLatestAMIVersions()
-	rbm.instanceManager.amis["linux"] = linuxImage
+	rbm.instanceManager.GetSupportedAMIs()
+	//linuxImage := rbm.instanceManager.GetLatestAMIVersion()
+	//rbm.instanceManager.amis["linux"] = linuxImage
 
 	rbm.instanceManager.CreateEC2InstancesBlocking(instanceGuide)
 	fmt.Println("Starting SSM Client")
@@ -47,13 +52,21 @@ func CreateRemoteBuildManager(instanceGuide map[string]OS) *RemoteBuildManager {
 	//RunCmdRemotely(rbm.ssmClient, rbm.instances["linux"], "export PATH=$PATH:/usr/local/go/bin")
 	return &rbm
 }
+
+// This function runs a command on a specific instance
 func (rbm *RemoteBuildManager) RunCommand(cmd string, instanceName string, comment string) error {
 	if _, ok := rbm.instanceManager.instances[instanceName]; !ok {
 		return errors.New("Invalid Instance Name")
 	}
 	return RunCmdRemotely(rbm.ssmClient, rbm.instanceManager.instances[instanceName], cmd, comment)
 }
+
+// This function Builds CWA on a specific instance( it must be a linux instance)
 func (rbm *RemoteBuildManager) BuildCWAAgent(gitUrl string, branch string, commitHash string, instanceName string) error {
+	err := rbm.instanceManager.insertOSRequirement(instanceName, LINUX)
+	if err != nil {
+		return err
+	}
 	buildMasterCommand := mergeCommands(
 		CloneGitRepo(gitUrl, branch),
 		MakeBuild(),

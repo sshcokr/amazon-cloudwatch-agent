@@ -17,14 +17,26 @@ func TestAmiLatest(t *testing.T) {
 
 	imng := CreateNewInstanceManager(cfg)
 	// is it consistent
-	previous := *imng.GetLatestAMIVersions().ImageId
+	previous := *imng.GetLatestAMIVersion().ImageId
 	for i := 0; i < 5; i++ {
-		current := *imng.GetLatestAMIVersions().ImageId
+		current := *imng.GetLatestAMIVersion().ImageId
 		require.Equalf(t, current, previous, "AMI is inconsistent %s | %s", current, previous)
 	}
-	fmt.Println(imng.GetLatestAMIVersions().ImageId)
+	fmt.Println(imng.GetLatestAMIVersion().ImageId)
 
 }
+func TestSupportedAmis(t *testing.T) {
+	cfg, _ := config.LoadDefaultConfig(context.TODO())
+
+	imng := CreateNewInstanceManager(cfg)
+	imng.GetSupportedAMIs()
+	for _, os := range SUPPORTED_OS {
+		_, ok := imng.amis[os]
+		require.Truef(t, ok, "It does not contain", os)
+	}
+	//fmt.Println(imng.amis)
+}
+
 func TestEc2Generation(t *testing.T) {
 	rbm := CreateRemoteBuildManager(DEFAULT_INSTANCE_GUIDE)
 	fmt.Println(rbm.ssmClient)
@@ -72,12 +84,25 @@ func TestEnviorment(t *testing.T) {
 			"make"),
 	)
 }
+func TestOSMixUp(t *testing.T) {
+	guide := map[string]OS{
+		"linux": LINUX,
+		"win":   WINDOWS,
+	}
+	rbm := CreateRemoteBuildManager(guide)
+	defer rbm.Close()
+	require.NoErrorf(t, rbm.instanceManager.insertOSRequirement("linux", LINUX), "")
+	require.Errorf(t, rbm.instanceManager.insertOSRequirement("linux", WINDOWS),
+		"You should be getting an error for mixing OSes")
+
+}
 func TestPublicRepoBuild(t *testing.T) {
 	REPO_NAME := "https://github.com/aws/amazon-cloudwatch-agent.git"
 	BRANCH_NAME := "main"
 	rbm := CreateRemoteBuildManager(DEFAULT_INSTANCE_GUIDE)
 	defer rbm.Close()
-	rbm.BuildCWAAgent(REPO_NAME, BRANCH_NAME, fmt.Sprintf("PUBLIC_REPO_TEST-%d", time.Now().Unix()), "MainBuildEnv")
+	err := rbm.BuildCWAAgent(REPO_NAME, BRANCH_NAME, fmt.Sprintf("PUBLIC_REPO_TEST-%d", time.Now().Unix()), "MainBuildEnv")
+	require.NoError(t, err)
 	//rbm.RunCommand(RemoveFolder("ccwa"), "clean the repo folder")
 }
 

@@ -13,22 +13,32 @@ import (
 	"github.com/schollz/progressbar/v3"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
 
 const ACCOUNT_ID = "956457624121"
 
+var (
+	INVALID_INSTANCE = errors.New("Invalid Instance")
+	INVALID_OS       = errors.New("That OS is not in supported AMIs")
+)
+
 type OS string
 
 const (
-	LINUX OS = "linux"
+	LINUX   OS = "linux"
+	WINDOWS OS = "windows"
+	//DARWIN  OS = "darwin"
 )
 
+var SUPPORTED_OS = []OS{LINUX, WINDOWS} //go doesn't let me create a slice from enum so this is the solution
 type InstanceManager struct {
 	ec2Client *ec2.Client
 	instances map[string]*types.Instance
 	amis      map[OS]*types.Image
+	guide     map[string]OS
 }
 
 func CreateNewInstanceManager(cfg aws.Config) *InstanceManager {
@@ -38,11 +48,16 @@ func CreateNewInstanceManager(cfg aws.Config) *InstanceManager {
 		amis:      make(map[OS]*types.Image),
 	}
 }
-func (imng *InstanceManager) GetLatestAMIVersions() *types.Image {
+func (imng *InstanceManager) GetAllAMIVersions() []types.Image {
+	//returns a sorted list by creation date
 	filters := []types.Filter{
 		{
 			Name:   aws.String("owner-id"),
 			Values: []string{ACCOUNT_ID},
+		},
+		{
+			Name:   aws.String("tag-key"),
+			Values: []string{"build-env"},
 		},
 	}
 	// Get the latest AMI made by your own user
@@ -56,13 +71,17 @@ func (imng *InstanceManager) GetLatestAMIVersions() *types.Image {
 	sort.Slice(resp.Images, func(i, j int) bool {
 		return parseTime(*resp.Images[i].CreationDate).After(*parseTime(*resp.Images[j].CreationDate))
 	})
+	return resp.Images
+}
+func (imng *InstanceManager) GetLatestAMIVersion() *types.Image {
+	amiList := imng.GetAllAMIVersions()
 	//// Print the latest AMI ID
 	//for _, i := range resp.Images {
 	//	fmt.Printf("%s,%s\n", *i.ImageId, *i.CreationDate)
 	//}
-	if len(resp.Images) > 0 {
-		fmt.Println("Latest AMI ID:", *resp.Images[0].ImageId)
-		return &resp.Images[0]
+	if len(amiList) > 0 {
+		fmt.Println("Latest AMI ID:", *amiList[0].ImageId)
+		return &amiList[0]
 	} else {
 		fmt.Println("No AMIs found.")
 		return nil
@@ -76,17 +95,24 @@ func parseTime(value string) *time.Time {
 	return &t
 }
 
-//	func (imng * InstanceManager) GetSupportedAMIs(){
-//		//this populates the amis map
-//		for os :=range SUPPORTED_OSes{
-//
-//		}
-//	}
+func (imng *InstanceManager) GetSupportedAMIs() {
+	//this populates the amis map
+	latestAmis := imng.GetAllAMIVersions()
+	for _, ami := range latestAmis {
+		for _, os := range SUPPORTED_OS {
+			if strings.Contains(strings.ToLower(*ami.PlatformDetails), string(os)) {
+				imng.amis[os] = &ami
+				break
+			}
+		}
+	}
+
+}
 func (imng *InstanceManager) CreateEC2InstancesBlocking(instanceGuide map[string]OS) error {
 	//check if all OSes are valid
 	for _, osType := range instanceGuide {
 		if _, ok := imng.amis[osType]; !ok {
-			return errors.New("That OS is not in supported AMIs")
+			return INVALID_OS
 		}
 	}
 	//create instances
@@ -116,6 +142,18 @@ func (imng *InstanceManager) Close() error {
 		}
 	}
 	return nil
+}
+
+func (imng *InstanceManager) insertOSRequirement(instanceName string, targetOS OS) error {
+	instanceOS, ok := imng.guide[instanceName]
+	if !ok {
+		return INVALID_INSTANCE
+	}
+	if instanceOS == targetOS {
+		return nil
+	}
+	return errors.New(fmt.Sprintf("This Instance is not the required OS, got: %s, requied: %s ", instanceOS, targetOS))
+
 }
 
 // EC2CreateInstanceAPI defines the interface for the RunInstances and CreateTags functions.
