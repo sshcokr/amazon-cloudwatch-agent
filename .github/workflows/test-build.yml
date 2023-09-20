@@ -78,12 +78,17 @@ jobs:
         with:
           key: "cached_binaries_${{ github.sha }}"
           path: go.mod
-      - name:  Run Uniform Build Env
+      - name: vartest
+        env:
+            Test: "oh no"
+        run: echo "${{secrets.AWS_PRIVATE_KEY}} ${{vars.IAMNOTASECRETUNLESS}} ${{env.Test}}"
+      - name:  Build Uniform Build Env
         if: contains(inputs.BucketKey, 'test') == false || steps.cached_binaries.outputs.cache-hit == false
         run: |
           cd packaging/uniformBuild
-          go build . 
-          ./uniformBuild -r "${{github.repositoryUrl}}" -b "main" -c "${{github.sha}}"
+          go build .
+          ./uniformBuild -r "${{github.repositoryUrl}}" -b "main" -c "${{github.sha}}" 
+
 #      - name: Cache go                                   ^^^ make it not main
 #        # Only skip for integration builds not release builds.
 #        if: contains(inputs.BucketKey, 'test') == false || steps.cached_binaries.outputs.cache-hit == false
