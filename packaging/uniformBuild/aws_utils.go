@@ -49,10 +49,10 @@ func CreateNewInstanceManager(cfg aws.Config) *InstanceManager {
 func (imng *InstanceManager) GetAllAMIVersions(accountID string) []types.Image {
 	//returns a sorted list by creation date
 	filters := []types.Filter{
-		{
-			Name:   aws.String("owner-id"),
-			Values: []string{accountID},
-		},
+		//{
+		//	Name:   aws.String("owner-id"),
+		//	Values: []string{"self"},
+		//},
 		{
 			Name:   aws.String("tag-key"),
 			Values: []string{"build-env"},
@@ -92,7 +92,7 @@ func parseTime(value string) *time.Time {
 func (imng *InstanceManager) GetSupportedAMIs(accountID string) {
 	//this populates the amis map
 	latestAmis := imng.GetAllAMIVersions(accountID)
-	fmt.Printf("Found %d possible AMIs", len(latestAmis))
+	fmt.Printf("Found %d possible AMIs \n", len(latestAmis))
 	for _, ami := range latestAmis {
 		for _, os := range SUPPORTED_OS {
 			if strings.Contains(strings.ToLower(*ami.PlatformDetails), string(os)) {

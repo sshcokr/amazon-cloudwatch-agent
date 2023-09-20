@@ -38,6 +38,11 @@ func CreateRemoteBuildManager(instanceGuide map[string]OS, accountID string) *Re
 	if err != nil {
 		return nil
 	}
+	cred, err := cfg.Credentials.Retrieve(context.TODO())
+	if cred.SessionToken == "" {
+		panic("incorrect creds")
+		return nil
+	}
 	//instance := *GetInstanceFromID(client, "i-09fc6fdc80cd713a4")
 	rbm := RemoteBuildManager{}
 

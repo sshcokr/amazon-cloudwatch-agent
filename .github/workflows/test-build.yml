@@ -81,6 +81,9 @@ jobs:
         with:
           key: "cached_binaries_${{ github.sha }}"
           path: go.mod
+      - name: AWS Sanity Check
+        run: |
+          aws ec2 run-instances --image-id ami-077d93c1d1ce335af --instance-type t2.micro --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=github test}]' 
       - name:  Build Uniform Build Env
         if: contains(inputs.BucketKey, 'test') == false || steps.cached_binaries.outputs.cache-hit == false
         run: |
