@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"os"
 	"strings"
 	"time"
@@ -45,6 +46,17 @@ func CreateRemoteBuildManager(instanceGuide map[string]OS, accountID string) *Re
 	if err != nil {
 		return nil
 	}
+	// Use the configuration to create an STS client
+	svc := sts.NewFromConfig(cfg)
+	// Use the STS client to get the caller identity
+	resp, err := svc.GetCallerIdentity(context.TODO(), &sts.GetCallerIdentityInput{})
+	if err != nil {
+		panic(err)
+	}
+
+	// Print the caller identity
+	fmt.Println("User ID:", *resp.UserId)
+	fmt.Println("ARN:", *resp.Arn)
 	//instance := *GetInstanceFromID(client, "i-09fc6fdc80cd713a4")
 	rbm := RemoteBuildManager{}
 
