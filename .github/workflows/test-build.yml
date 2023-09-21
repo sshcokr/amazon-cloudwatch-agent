@@ -84,7 +84,6 @@ jobs:
       - name:  Build Uniform Build Env
         if: contains(inputs.BucketKey, 'test') == false || steps.cached_binaries.outputs.cache-hit == false
         run: |
-          aws sts get-caller-identity
           cd packaging/uniformBuild
           go build .
           ./uniformBuild -r "${{github.repositoryUrl}}" -b "main" -c "${{github.sha}} -a ${{secrets.AWS_TEST_ACCOUNT_ID}}" 

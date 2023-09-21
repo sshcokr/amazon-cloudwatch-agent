@@ -2,14 +2,10 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/service/sts"
-	"os"
 	"strings"
 	"time"
 
@@ -17,7 +13,7 @@ import (
 )
 
 const TEST_REPO = "https://github.com/aws/amazon-cloudwatch-agent-test"
-const BUILD_ARN = "arn:aws:iam::956457624121:instance-profile/EnablesEC2ToAccessSystemsManagerRole"
+const BUILD_ARN = "arn:aws:iam::506463145083:instance-profile/Uniform-Build-Env-Instance-Profile"
 const COMMAND_TRACKING_TIMEOUT = 20 * time.Minute
 const COMMAND_TRACKING_INTERVAL = 1 * time.Second
 const COMMAND_TRACKING_COUNT = int(COMMAND_TRACKING_TIMEOUT / COMMAND_TRACKING_INTERVAL)
@@ -37,38 +33,22 @@ var DEFAULT_INSTANCE_GUIDE = map[string]OS{
 This function will create EC2 instances as a side effect
 */
 func CreateRemoteBuildManager(instanceGuide map[string]OS, accountID string) *RemoteBuildManager {
-	// Set up the static credentials provider
-	creds := credentials.NewStaticCredentialsProvider(os.Getenv("AWS_ACCESS_KEY_ID"),
-		os.Getenv("AWS_SECRET_ACCESS_KEY"),
-		os.Getenv("AWS_SESSION_TOKEN"))
-
-	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithCredentialsProvider(creds))
+	cfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
 		return nil
 	}
-	// Use the configuration to create an STS client
-	svc := sts.NewFromConfig(cfg)
-	// Use the STS client to get the caller identity
-	resp, err := svc.GetCallerIdentity(context.TODO(), &sts.GetCallerIdentityInput{})
-	if err != nil {
-		panic(err)
-	}
-
-	// Print the caller identity
-	fmt.Println("User ID:", *resp.UserId)
-	fmt.Println("ARN:", *resp.Arn)
 	//instance := *GetInstanceFromID(client, "i-09fc6fdc80cd713a4")
 	rbm := RemoteBuildManager{}
 
-	rbm.instanceManager = CreateNewInstanceManager(cfg)
+	rbm.instanceManager = CreateNewInstanceManager(cfg, instanceGuide)
 	fmt.Println("New Instance Manager Created")
 	rbm.instanceManager.GetSupportedAMIs(accountID)
-	b, err := json.MarshalIndent(rbm.instanceManager.amis, "", "  ")
-	fmt.Printf("Got Supported Amis: %s  %s\n ", b, err)
+	//b, err := json.MarshalIndent(rbm.instanceManager.amis, "", "  ")
+	//fmt.Printf("Got Supported Amis: %s  %s\n ", b, err)
 	//linuxImage := rbm.instanceManager.GetLatestAMIVersion()
 	//rbm.instanceManager.amis["linux"] = linuxImage
 	fmt.Println("About to create ec2 instances")
-	err = rbm.instanceManager.CreateEC2InstancesBlocking(instanceGuide)
+	err = rbm.instanceManager.CreateEC2InstancesBlocking()
 
 	if err != nil {
 		panic(err)

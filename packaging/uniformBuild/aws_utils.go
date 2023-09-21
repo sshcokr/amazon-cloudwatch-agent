@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -33,17 +34,18 @@ const (
 
 var SUPPORTED_OS = []OS{LINUX, WINDOWS} //go doesn't let me create a slice from enum so this is the solution
 type InstanceManager struct {
-	ec2Client *ec2.Client
-	instances map[string]*types.Instance
-	amis      map[OS]*types.Image
-	guide     map[string]OS
+	ec2Client     *ec2.Client
+	instances     map[string]*types.Instance
+	amis          map[OS]*types.Image
+	instanceGuide map[string]OS
 }
 
-func CreateNewInstanceManager(cfg aws.Config) *InstanceManager {
+func CreateNewInstanceManager(cfg aws.Config, instanceGuide map[string]OS) *InstanceManager {
 	return &InstanceManager{
-		ec2Client: ec2.NewFromConfig(cfg),
-		instances: make(map[string]*types.Instance),
-		amis:      make(map[OS]*types.Image),
+		ec2Client:     ec2.NewFromConfig(cfg),
+		instances:     make(map[string]*types.Instance),
+		amis:          make(map[OS]*types.Image),
+		instanceGuide: instanceGuide,
 	}
 }
 func (imng *InstanceManager) GetAllAMIVersions(accountID string) []types.Image {
@@ -103,15 +105,15 @@ func (imng *InstanceManager) GetSupportedAMIs(accountID string) {
 	}
 
 }
-func (imng *InstanceManager) CreateEC2InstancesBlocking(instanceGuide map[string]OS) error {
+func (imng *InstanceManager) CreateEC2InstancesBlocking() error {
 	//check if all OSes are valid
-	for _, osType := range instanceGuide {
+	for _, osType := range imng.instanceGuide {
 		if _, ok := imng.amis[osType]; !ok {
 			return INVALID_OS
 		}
 	}
 	//create instances
-	for instanceName, osType := range instanceGuide {
+	for instanceName, osType := range imng.instanceGuide {
 		image := imng.amis[osType]
 		instance := CreateInstanceCmd(imng.ec2Client, image, instanceName)
 		imng.instances[instanceName] = &instance
@@ -120,10 +122,15 @@ func (imng *InstanceManager) CreateEC2InstancesBlocking(instanceGuide map[string
 	var wg sync.WaitGroup
 	for _, instance := range imng.instances {
 		wg.Add(1)
-		go func() {
+		go func(targetInstance *types.Instance) {
 			defer wg.Done()
-			WaitUntilAgentIsOn(imng.ec2Client, instance)
-		}()
+			WaitUntilAgentIsOn(imng.ec2Client, targetInstance)
+			err := AssignInstanceProfile(imng.ec2Client, targetInstance)
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+		}(instance)
 	}
 	wg.Wait()
 	return nil
@@ -140,8 +147,10 @@ func (imng *InstanceManager) Close() error {
 }
 
 func (imng *InstanceManager) insertOSRequirement(instanceName string, targetOS OS) error {
-	instanceOS, ok := imng.guide[instanceName]
+	instanceOS, ok := imng.instanceGuide[instanceName]
 	if !ok {
+		b, _ := json.MarshalIndent(imng.instanceGuide, "", "  ")
+		fmt.Printf("%s is not in %s \n", instanceName, b)
 		return INVALID_INSTANCE
 	}
 	if instanceOS == targetOS {
@@ -174,7 +183,20 @@ type EC2StopInstancesAPI interface {
 func MakeInstance(c context.Context, api EC2CreateInstanceAPI, input *ec2.RunInstancesInput) (*ec2.RunInstancesOutput, error) {
 	return api.RunInstances(c, input)
 }
-
+func AssignInstanceProfile(client *ec2.Client, instance *types.Instance) error {
+	_, err := client.AssociateIamInstanceProfile(context.TODO(), &ec2.AssociateIamInstanceProfileInput{
+		IamInstanceProfile: &types.IamInstanceProfileSpecification{
+			Arn: aws.String(BUILD_ARN),
+		},
+		InstanceId: instance.InstanceId,
+	})
+	if err != nil {
+		fmt.Println("Got an error attaching iam profile")
+		return err
+	}
+	fmt.Println("IAM Instance Profile successfully added")
+	return nil
+}
 func CreateInstanceCmd(client *ec2.Client, image *types.Image, name string) types.Instance {
 	// Create separate values if required.
 	minMaxCount := int32(1)
@@ -203,7 +225,6 @@ func CreateInstanceCmd(client *ec2.Client, image *types.Image, name string) type
 		//	Arn: aws.String(BUILD_ARN),
 		//},
 	}
-
 	result, err := MakeInstance(context.TODO(), client, input)
 	if err != nil {
 		fmt.Println("Got an error creating an instance:")
