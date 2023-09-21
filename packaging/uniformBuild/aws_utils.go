@@ -263,7 +263,13 @@ func StopInstanceCmd(client *ec2.Client, instanceID string) error {
 	fmt.Println("Stopped instance with ID " + instanceID)
 	return nil
 }
-
+func enforceCommentLimit(s string) string {
+	const commentCharLimit = 100
+	if len(s) > commentCharLimit {
+		return s[:commentCharLimit]
+	}
+	return s
+}
 func RunCmdRemotely(ssmClient *ssm.Client, instance *types.Instance, command string, comment string) error {
 	// Specify the input for sending the command
 	timeout := int32(COMMAND_TRACKING_TIMEOUT.Seconds())
@@ -281,7 +287,7 @@ func RunCmdRemotely(ssmClient *ssm.Client, instance *types.Instance, command str
 		OutputS3KeyPrefix:  aws.String("buildenvtesting/logs/"),
 		TimeoutSeconds:     aws.Int32(timeout),
 
-		Comment: aws.String(comment),
+		Comment: aws.String(enforceCommentLimit(comment)),
 	}
 	// Run the script on the instance
 	fmt.Println("Command sent!")
