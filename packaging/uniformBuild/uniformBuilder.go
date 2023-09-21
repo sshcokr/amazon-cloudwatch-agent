@@ -7,6 +7,8 @@ import (
 	"flag"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"os"
 	"strings"
 	"time"
 
@@ -34,13 +36,13 @@ var DEFAULT_INSTANCE_GUIDE = map[string]OS{
 This function will create EC2 instances as a side effect
 */
 func CreateRemoteBuildManager(instanceGuide map[string]OS, accountID string) *RemoteBuildManager {
-	cfg, err := config.LoadDefaultConfig(context.TODO())
+	// Set up the static credentials provider
+	creds := credentials.NewStaticCredentialsProvider(os.Getenv("AWS_ACCESS_KEY_ID"),
+		os.Getenv("AWS_SECRET_ACCESS_KEY"),
+		os.Getenv("AWS_SESSION_TOKEN"))
+
+	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithCredentialsProvider(creds))
 	if err != nil {
-		return nil
-	}
-	cred, err := cfg.Credentials.Retrieve(context.TODO())
-	if cred.SessionToken == "" {
-		panic("incorrect creds")
 		return nil
 	}
 	//instance := *GetInstanceFromID(client, "i-09fc6fdc80cd713a4")
