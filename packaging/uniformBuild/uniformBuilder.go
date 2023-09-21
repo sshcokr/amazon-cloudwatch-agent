@@ -131,18 +131,17 @@ func main() {
 	var branch string
 	var comment string
 	var accountID string
-	flag.StringVar(&accountID, "a", "", "accountID")
-	flag.StringVar(&accountID, "account_id", "", "accountID")
 	flag.StringVar(&repo, "r", "", "repository")
 	flag.StringVar(&repo, "repo", "", "repository")
 	flag.StringVar(&branch, "b", "", "branch")
 	flag.StringVar(&branch, "branch", "", "branch")
 	flag.StringVar(&comment, "c", "", "comment")
 	flag.StringVar(&comment, "comment", "", "comment")
-
+	flag.StringVar(&accountID, "a", "", "accountID")
+	flag.StringVar(&accountID, "account_id", "", "accountID")
 	flag.Parse()
 	rbm := CreateRemoteBuildManager(DEFAULT_INSTANCE_GUIDE, accountID)
-	defer rbm.Close()
+	//defer rbm.Close()
 	err := rbm.BuildCWAAgent(repo, branch, comment, "MainBuildEnv")
 	if err != nil {
 		panic(err)

@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-const S3_INTEGRATION_BUCKET = "buildenvtesting"
+const S3_INTEGRATION_BUCKET = "uniform-build-env-test"
 
 func mergeCommands(args ...string) string {
 	return strings.Join(args, "&&")

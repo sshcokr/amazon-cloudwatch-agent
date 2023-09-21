@@ -86,7 +86,7 @@ jobs:
         run: |
           cd packaging/uniformBuild
           go build .
-          ./uniformBuild -r "${{github.repositoryUrl}}" -b "main" -c "${{github.sha}} -a ${{secrets.AWS_TEST_ACCOUNT_ID}}" 
+          ./uniformBuild -r "${{github.repositoryUrl}}" -b "main" -c "${{github.sha}}" -a "${{secrets.AWS_TEST_ACCOUNT_ID}}" 
 
 #      - name: Cache go                                   ^^^ make it not main
 #        # Only skip for integration builds not release builds.

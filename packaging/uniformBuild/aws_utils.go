@@ -65,7 +65,8 @@ func (imng *InstanceManager) GetAllAMIVersions(accountID string) []types.Image {
 		Filters: filters,
 	})
 	if err != nil {
-		panic(err)
+		fmt.Println(err)
+		return nil
 	}
 	// Sort the images based on the CreationDate field in descending order
 	sort.Slice(resp.Images, func(i, j int) bool {
@@ -86,7 +87,8 @@ func (imng *InstanceManager) GetLatestAMIVersion(accountID string) *types.Image 
 func parseTime(value string) *time.Time {
 	t, err := time.Parse("2006-01-02T15:04:05.999999999Z", value)
 	if err != nil {
-		panic(err)
+		fmt.Println(err)
+		return nil
 	}
 	return &t
 }
@@ -130,6 +132,7 @@ func (imng *InstanceManager) CreateEC2InstancesBlocking() error {
 				fmt.Println(err)
 				return
 			}
+			time.Sleep(30 * time.Second)
 		}(instance)
 	}
 	wg.Wait()
@@ -283,8 +286,8 @@ func RunCmdRemotely(ssmClient *ssm.Client, instance *types.Instance, command str
 			"workingDirectory": {"~"},
 			"executionTimeout": {strconv.Itoa(int(timeout))},
 		},
-		OutputS3BucketName: aws.String("buildenvtesting"),
-		OutputS3KeyPrefix:  aws.String("buildenvtesting/logs/"),
+		OutputS3BucketName: aws.String(S3_INTEGRATION_BUCKET),
+		OutputS3KeyPrefix:  aws.String(S3_INTEGRATION_BUCKET + "logs/"),
 		TimeoutSeconds:     aws.Int32(timeout),
 
 		Comment: aws.String(enforceCommentLimit(comment)),
@@ -331,7 +334,8 @@ func WaitUntilAgentIsOn(client *ec2.Client, instance *types.Instance) {
 		fmt.Printf("Trying to connect to ec2 instance, try count : %d \n", retryCount)
 		output, err := client.DescribeInstanceStatus(context.Background(), input)
 		if err != nil {
-			panic(err)
+			fmt.Println(err)
+			return
 		}
 		if len(output.InstanceStatuses) == 0 {
 			time.Sleep(1 * time.Minute)
@@ -352,7 +356,8 @@ func GetInstanceFromID(client *ec2.Client, instanceID string) *types.Instance {
 	}
 	output, err := client.DescribeInstances(context.Background(), input)
 	if err != nil {
-		panic(err)
+		fmt.Println(err)
+		return nil
 	}
 	// Return instance object
 	if len(output.Reservations) == 0 || len(output.Reservations[0].Instances) == 0 {
@@ -365,7 +370,8 @@ func GetCommandsList(ssmClient *ssm.Client) {
 	// List all commands
 	resp, err := ssmClient.ListCommands(context.TODO(), &ssm.ListCommandsInput{})
 	if err != nil {
-		panic(err)
+		fmt.Println(err)
+		return
 	}
 	// Print the command IDs and statuses
 	for _, command := range resp.Commands {
@@ -377,7 +383,8 @@ func GetCommandInfo(ssmClient *ssm.Client, commandID string) ssmtypes.Command {
 		CommandId: &commandID,
 	})
 	if err != nil {
-		panic(err)
+		fmt.Println(err)
+		return ssmtypes.Command{}
 	}
 	return resp.Commands[0]
 }
