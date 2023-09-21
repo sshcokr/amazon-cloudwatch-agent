@@ -199,9 +199,9 @@ func CreateInstanceCmd(client *ec2.Client, image *types.Image, name string) type
 				},
 			},
 		},
-		IamInstanceProfile: &types.IamInstanceProfileSpecification{
-			Arn: aws.String(BUILD_ARN),
-		},
+		//IamInstanceProfile: &types.IamInstanceProfileSpecification{
+		//	Arn: aws.String(BUILD_ARN),
+		//},
 	}
 
 	result, err := MakeInstance(context.TODO(), client, input)
